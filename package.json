@@ -1,7 +1,7 @@
 {
   "name": "uci-ambulancias-backend",
   "version": "1.0.0",
-  "description": "Backend para sistema de envio de fichas clinicas UCI Ambulancias",
+  "description": "Backend para sistema de UCI Ambulancias",
   "main": "SERVER.JS",
   "scripts": {
     "start": "node SERVER.JS",
