@@ -1,223 +1,180 @@
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const { Resend } = require('resend');
 
-const app = express();
-const PORT = process.env.PORT || 3001;
+// Configuración - En Render las variables vienen de process.env automáticamente
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const EMAIL_FROM = process.env.EMAIL_FROM || 'UCI Ambulancias <onboarding@resend.dev>';
+const EMAIL_TO = process.env.EMAIL_TO || 'uciambulancias176@gmail.com';
+const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || 'uciambulancias176@gmail.com';
+const PORT = process.env.PORT || 3001;
 
-// ==========================================
-// CONFIGURACIÓN
-// ==========================================
+const app = express();
+const resend = new Resend(RESEND_API_KEY);
 
-// Validar API Key
+// Middlewares
+app.use(cors());
+app.use(express.json({ limit: process.env.PDF_MAX_SIZE || '50mb' }));
+app.use(express.static('public'));
+
+// Verificar configuración al iniciar
+console.log('🚀 ============================================');
+console.log('🏥 UCI AMBULANCIAS - SISTEMA INICIADO');
+console.log('📡 Servidor:', `http://localhost:${PORT}`);
+console.log('📧 Correo destino:', EMAIL_TO);
+console.log('🔑 API Key:', RESEND_API_KEY ? '✅ CONFIGURADA' : '❌ FALTANTE');
+console.log('💡 Estado:', RESEND_API_KEY ? 'LISTO PARA ENVIAR FICHAS PDF' : 'CONFIGURACIÓN INCOMPLETA');
+console.log('🚀 ============================================');
+
+// Validar configuración crítica
 if (!RESEND_API_KEY) {
-    console.error('❌ ERROR CRÍTICO: FALTA RESEND_API_KEY en .env');
-    console.log('💡 Verifica tu archivo .env tiene: RESEND_API_KEY=tu_api_key');
-    process.exit(1);
+  console.error('❌ ERROR CRÍTICO: FALTA RESEND_API_KEY en las variables de entorno');
+  process.exit(1);
 }
 
-// CONFIGURACIÓN CORS - PRODUCCIÓN (PEGAR)
-app.use(cors({
-    origin: [
-        'https://uciambulancias.cl',
-        'https://www.uciambulancias.cl'
-    ],
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-    credentials: false
-}));
-
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Servir archivos estáticos
-app.use(express.static(path.join(__dirname)));
-
-// ==========================================
-// RUTAS PRINCIPALES
-// ==========================================
-
-// RUTA RAIZ - Ficha clínica
+// Rutas
 app.get('/', (req, res) => {
-    console.log('📄 Sirviendo ficha clínica principal...');
-    res.sendFile(path.join(__dirname, 'ficha-clinica.html'));
-});
-
-app.get('/ficha-clinica', (req, res) => {
-    console.log('🏥 Sirviendo formulario ficha clínica...');
-    res.sendFile(path.join(__dirname, 'ficha-clinica.html'));
-});
-
-// ==========================================
-// RUTA DE ENVÍO DE PDF - FUNCIONAL
-// ==========================================
-
-app.post('/enviar-correo', async (req, res) => {
-    console.log('🚑 [ENVIO] Iniciando envío de ficha clínica...');
-    
-    try {
-        const { pdf, paciente, folio, fecha, ambulancia, motivo } = req.body;
-
-        console.log('📊 Datos recibidos:', {
-            paciente: paciente || 'No especificado',
-            folio: folio || 'No especificado',
-            tamañoPDF: pdf ? Math.round(pdf.length / 1024) + ' KB' : 'NO HAY PDF'
-        });
-
-        // VALIDACIONES CRÍTICAS
-        if (!pdf) {
-            console.log('❌ ERROR: No se recibió el PDF');
-            return res.json({ 
-                success: false, 
-                error: 'ERROR: No se generó el PDF correctamente' 
-            });
-        }
-
-        if (!paciente || paciente.trim() === '') {
-            console.log('❌ ERROR: Falta nombre del paciente');
-            return res.json({ 
-                success: false, 
-                error: 'ERROR: INGRESE NOMBRE DEL PACIENTE' 
-            });
-        }
-
-        // CONFIGURACIÓN RESEND
-        const resend = new Resend(RESEND_API_KEY);
-
-        // CONVERTIR PDF
-        console.log('🔄 Convirtiendo PDF a buffer...');
-        const pdfBuffer = Buffer.from(pdf, 'base64');
-        
-        if (pdfBuffer.length === 0) {
-            throw new Error('PDF vacío o corrupto');
-        }
-
-        console.log(`✅ PDF convertido: ${pdfBuffer.length} bytes`);
-
-        // CONFIGURACIÓN CORREO
-        const emailConfig = {
-            from: process.env.EMAIL_FROM || 'UCI Ambulancias <onboarding@resend.dev>',
-            to: [process.env.EMAIL_TO || 'uciambulancias176@gmail.com'],
-            replyTo: process.env.EMAIL_REPLY_TO || 'uciambulancias176@gmail.com',
-            subject: `FICHA CLÍNICA ${folio} - ${paciente}`,
-            html: `
-                <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
-                    <h2 style="color: #0074d9; border-bottom: 2px solid #0074d9; padding-bottom: 10px;">
-                        🏥 UCI AMBULANCIAS - Ficha Clínica
-                    </h2>
-                    
-                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 15px 0;">
-                        <h3 style="color: #333; margin-top: 0;">📋 Datos del Traslado</h3>
-                        <p><strong>📄 Folio:</strong> ${folio || 'No especificado'}</p>
-                        <p><strong>👤 Paciente:</strong> ${paciente}</p>
-                        <p><strong>📅 Fecha:</strong> ${fecha || 'No especificada'}</p>
-                        <p><strong>🚑 Ambulancia:</strong> ${ambulancia || 'No especificada'}</p>
-                        <p><strong>🎯 Motivo:</strong> ${motivo || 'No especificado'}</p>
-                    </div>
-                    
-                    <div style="background: #e8f5e8; padding: 15px; border-radius: 5px; border-left: 4px solid #28a745;">
-                        <p style="margin: 0; color: #2d5016;">
-                            <strong>📎 ADJUNTO:</strong> Ficha clínica completa en formato PDF
-                        </p>
-                        <p style="margin: 5px 0 0 0; font-size: 14px;">
-                            Incluye: Signos vitales, antecedentes, tratamientos, escalas médicas y firmas
-                        </p>
-                    </div>
-                    
-                    <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 5px;">
-                        <p style="margin: 0; color: #856404;">
-                            <strong>⚡ Generado automáticamente</strong><br>
-                            Sistema UCI Ambulancias - ${new Date().toLocaleDateString('es-CL')}
-                        </p>
-                    </div>
-                </div>
-            `,
-            attachments: [{
-                filename: `Ficha_Clinica_${folio || 'SN'}_${paciente.replace(/\s+/g, '_')}.pdf`,
-                content: pdfBuffer,
-                contentType: 'application/pdf'
-            }]
-        };
-
-        // ENVÍO DE CORREO
-        console.log('📤 Enviando correo a través de Resend...');
-        const { data, error } = await resend.emails.send(emailConfig);
-
-        if (error) {
-            console.error('❌ ERROR RESEND:', error);
-            throw new Error(`Error Resend: ${error.message}`);
-        }
-
-        console.log('✅ CORREO ENVIADO EXITOSAMENTE!');
-        console.log('📧 ID del correo:', data.id);
-        console.log('👤 Paciente:', paciente);
-        console.log('📄 Folio:', folio);
-
-        // RESPUESTA DE ÉXITO
-        res.json({ 
-            success: true, 
-            message: '✅ FICHA CLÍNICA ENVIADA CORRECTAMENTE A uciambulancias176@gmail.com',
-            emailId: data.id,
-            folio: folio,
-            paciente: paciente,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        console.error('💥 ERROR CRÍTICO EN ENVÍO:', error);
-        
-        res.json({ 
-            success: false, 
-            error: `ERROR: ${error.message}`,
-            timestamp: new Date().toISOString()
-        });
+  res.json({
+    message: '🚑 UCI Ambulancias - Backend Funcionando',
+    version: '1.0.0',
+    status: 'operational',
+    endpoints: {
+      fichaClinica: '/ficha-clinica',
+      status: '/status',
+      health: '/health'
     }
-});
-
-// ==========================================
-// RUTAS DE DIAGNÓSTICO
-// ==========================================
-
-app.get('/status', (req, res) => {
-    res.json({ 
-        status: '✅ SERVIDOR FUNCIONANDO',
-        servicio: 'UCI Ambulancias - Sistema de Fichas Clínicas',
-        timestamp: new Date().toLocaleString('es-CL'),
-        version: '1.0.0',
-        configuracion: {
-            puerto: PORT,
-            apiKey: RESEND_API_KEY ? '✅ CONFIGURADA' : '❌ FALTANTE',
-            emailFrom: process.env.EMAIL_FROM,
-            emailTo: process.env.EMAIL_TO
-        }
-    });
+  });
 });
 
 app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'OK', 
-        message: '🚑 Servidor UCI Ambulancias operativo',
-        timestamp: new Date().toISOString()
+  res.status(200).json({
+    status: 'OK',
+    service: 'UCI Ambulancias Backend',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+app.get('/status', (req, res) => {
+  res.json({
+    status: 'operational',
+    service: 'UCI Ambulancias PDF Service',
+    resend: RESEND_API_KEY ? 'configured' : 'missing',
+    email: EMAIL_TO,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Ruta principal para enviar fichas clínicas
+app.post('/ficha-clinica', async (req, res) => {
+  try {
+    const { paciente, folio, pdfBase64, tamañoPDF } = req.body;
+
+    console.log('📊 Datos recibidos:', { paciente, folio, 'tamañoPDF': tamañoPDF });
+
+    // Validaciones
+    if (!paciente || !folio || !pdfBase64) {
+      return res.status(400).json({
+        error: 'Datos incompletos',
+        requeridos: ['paciente', 'folio', 'pdfBase64']
+      });
+    }
+
+    // Convertir base64 a buffer
+    console.log('🔄 Convirtiendo PDF a buffer...');
+    const pdfBuffer = Buffer.from(pdfBase64, 'base64');
+    console.log('✅ PDF convertido:', pdfBuffer.length, 'bytes');
+
+    // Enviar correo
+    console.log('📤 Enviando correo a través de Resend...');
+    
+    const { data, error } = await resend.emails.send({
+      from: EMAIL_FROM,
+      to: EMAIL_TO,
+      reply_to: EMAIL_REPLY_TO,
+      subject: `Ficha Clínica - ${paciente} - ${folio}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2 style="color: #2563eb;">🏥 UCI Ambulancias</h2>
+          <h3>Nueva Ficha Clínica Recibida</h3>
+          <p><strong>Paciente:</strong> ${paciente}</p>
+          <p><strong>Folio:</strong> ${folio}</p>
+          <p><strong>Fecha:</strong> ${new Date().toLocaleString()}</p>
+          <p><strong>Tamaño PDF:</strong> ${tamañoPDF || Math.round(pdfBuffer.length / 1024) + ' KB'}</p>
+          <hr>
+          <p><em>Este es un envío automático del sistema de UCI Ambulancias.</em></p>
+        </div>
+      `,
+      attachments: [
+        {
+          filename: `ficha-clinica-${paciente}-${folio}.pdf`,
+          content: pdfBuffer
+        }
+      ]
     });
+
+    if (error) {
+      console.error('❌ Error al enviar correo:', error);
+      return res.status(500).json({
+        error: 'Error al enviar correo',
+        detalles: error.message
+      });
+    }
+
+    console.log('✅ CORREO ENVIADO EXITOSAMENTE!');
+    console.log('📧 ID del correo:', data.id);
+    console.log('👤 Paciente:', paciente);
+    console.log('📄 Folio:', folio);
+
+    res.json({
+      success: true,
+      message: 'Ficha clínica enviada exitosamente',
+      emailId: data.id,
+      paciente: paciente,
+      folio: folio,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('💥 Error en el servidor:', error);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      detalles: error.message
+    });
+  }
 });
 
-// ==========================================
-// INICIALIZACIÓN
-// ==========================================
+// Ruta para servir el formulario HTML
+app.get('/ficha-clinica', (req, res) => {
+  res.sendFile(path.join(__dirname, 'ficha-clinica.html'));
+});
 
+// Manejo de errores
+app.use((err, req, res, next) => {
+  console.error('💥 Error no manejado:', err);
+  res.status(500).json({
+    error: 'Error interno del servidor',
+    message: err.message
+  });
+});
+
+// Ruta no encontrada
+app.use('*', (req, res) => {
+  res.status(404).json({
+    error: 'Ruta no encontrada',
+    message: `La ruta ${req.originalUrl} no existe`
+  });
+});
+
+// Iniciar servidor
 app.listen(PORT, () => {
-    console.log('🚀 ============================================');
-    console.log('🏥 UCI AMBULANCIAS - SISTEMA INICIADO');
-    console.log(`📡 Servidor: http://localhost:${PORT}`);
-    console.log(`📧 Correo destino: ${process.env.EMAIL_TO}`);
-    console.log(`🔑 API Key: ${RESEND_API_KEY ? '✅ CONFIGURADA' : '❌ FALTANTE'}`);
-    console.log('💡 Estado: LISTO PARA ENVIAR FICHAS PDF');
-    console.log('🚀 ============================================');
-    console.log('\n🔗 URLs disponibles:');
-    console.log('   📋 http://localhost:3001/ficha-clinica');
-    console.log('   ✅ http://localhost:3001/status');
-    console.log('   ❤️  http://localhost:3001/health');
+  console.log(`\n🔗 URLs disponibles:`);
+  console.log(`   📋 http://localhost:${PORT}/ficha-clinica`);
+  console.log(`   ✅ http://localhost:${PORT}/status`);
+  console.log(`   ❤️  http://localhost:${PORT}/health`);
+  console.log(`\n🚑 Servidor UCI Ambulancias ejecutándose en puerto ${PORT}\n`);
 });
+
+module.exports = app;
