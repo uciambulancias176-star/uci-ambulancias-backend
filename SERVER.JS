@@ -92,9 +92,8 @@ app.get('/status', (req, res) => {
 app.post('/ficha-clinica', async (req, res) => {
     try {
         console.log('📨 Solicitud recibida desde:', req.get('origin'));
-        console.log('📊 Headers:', req.headers);
         
-        const { paciente, folio, pdfBase64, tamañoPDF, pdfData, data } = req.body;
+        const { paciente, folio, pdfBase64, tamañoPDF, pdfData, data, fotos, firmas, ambulancia } = req.body;
 
         console.log('📊 Datos recibidos:', { 
             paciente, 
@@ -102,7 +101,10 @@ app.post('/ficha-clinica', async (req, res) => {
             'tamañoPDF': tamañoPDF,
             'tienePdfBase64': !!pdfBase64,
             'tienePdfData': !!pdfData,
-            'tieneData': !!data
+            'tieneData': !!data,
+            'fotos': fotos ? Object.keys(fotos).length : 0,
+            'firmas': firmas ? Object.keys(firmas).length : 0,
+            'ambulancia': ambulancia
         });
 
         // Validaciones flexibles para diferentes formatos
@@ -134,6 +136,25 @@ app.post('/ficha-clinica', async (req, res) => {
             });
         }
 
+        // PREPARAR ADJUNTOS - SOLO EL PDF (las fotos y firmas ya están dentro del PDF)
+        const attachments = [
+            {
+                filename: `FICHA_${folio}_${paciente}.pdf`,
+                content: pdfBuffer
+            }
+        ];
+
+        // LOG DE FOTOS Y FIRMAS (solo para información, no se adjuntan por separado)
+        if (fotos && typeof fotos === 'object') {
+            console.log('📸 Fotos incluidas en PDF:', Object.keys(fotos).length, 'secciones');
+        }
+
+        if (firmas && typeof firmas === 'object') {
+            console.log('🖊️ Firmas incluidas en PDF:', Object.keys(firmas).length);
+        }
+
+        console.log(`📎 Adjunto preparado: 1 PDF con toda la información`);
+
         // Enviar correo
         console.log('📤 Enviando correo a través de Resend...');
         
@@ -148,19 +169,18 @@ app.post('/ficha-clinica', async (req, res) => {
                     <h3>Nueva Ficha Clínica Recibida</h3>
                     <p><strong>Paciente:</strong> ${paciente}</p>
                     <p><strong>Folio:</strong> ${folio}</p>
+                    <p><strong>Ambulancia:</strong> ${ambulancia || 'No especificada'}</p>
                     <p><strong>Fecha:</strong> ${new Date().toLocaleString()}</p>
                     <p><strong>Tamaño PDF:</strong> ${tamañoPDF || Math.round(pdfBuffer.length / 1024) + ' KB'}</p>
+                    <p><strong>Contenido:</strong> PDF con fotos y firmas incluidas</p>
+                    <p><strong>Fotos en PDF:</strong> ${fotos ? Object.keys(fotos).length : 0} secciones</p>
+                    <p><strong>Firmas en PDF:</strong> ${firmas ? Object.keys(firmas).length : 0}</p>
                     <p><strong>Origen:</strong> ${req.get('origin') || 'Directo'}</p>
                     <hr>
                     <p><em>Este es un envío automático del sistema de UCI Ambulancias.</em></p>
                 </div>
             `,
-            attachments: [
-                {
-                    filename: `ficha-clinica-${paciente}-${folio}.pdf`,
-                    content: pdfBuffer
-                }
-            ]
+            attachments: attachments
         });
 
         if (error) {
@@ -175,6 +195,8 @@ app.post('/ficha-clinica', async (req, res) => {
         console.log('📧 ID del correo:', emailData.id);
         console.log('👤 Paciente:', paciente);
         console.log('📄 Folio:', folio);
+        console.log('🚑 Ambulancia:', ambulancia);
+        console.log('📎 Archivo adjunto: 1 PDF con toda la información');
         console.log('🌍 Origen:', req.get('origin'));
 
         res.json({
@@ -183,6 +205,10 @@ app.post('/ficha-clinica', async (req, res) => {
             emailId: emailData.id,
             paciente: paciente,
             folio: folio,
+            ambulancia: ambulancia,
+            archivosAdjuntos: 1,
+            fotosEnPDF: fotos ? Object.keys(fotos).length : 0,
+            firmasEnPDF: firmas ? Object.keys(firmas).length : 0,
             origen: req.get('origin'),
             timestamp: new Date().toISOString()
         });
@@ -256,3 +282,4 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+
