@@ -172,12 +172,44 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Iniciar servidor
+// ============================================
+// SISTEMA ANTI-SLEEP PARA INSTANCIA GRATUITA
+// ============================================
+const keepInstanceAlive = () => {
+    setInterval(() => {
+        const now = new Date().toLocaleString('es-CL');
+        console.log(`🔄 [${now}] Manteniendo instancia activa...`);
+    }, 840000); // 14 minutos (menos de 15 min timeout)
+};
+
+// ============================================
+// PING AUTOMÁTICO INTERNO
+// ============================================
+const autoPing = () => {
+    setInterval(async () => {
+        try {
+            const response = await fetch(`https://uci-ambulancias-backend.onrender.com/health`);
+            const data = await response.json();
+            console.log(`❤️ Health check: ${data.status} - ${new Date().toLocaleTimeString()}`);
+        } catch (error) {
+            console.log('⚠️ Health check falló, pero servidor sigue activo');
+        }
+    }, 600000); // 10 minutos
+};
+
+// ============================================
+// INICIAR SERVIDOR (MODIFICAR ESTO)
+// ============================================
 app.listen(PORT, () => {
     console.log(`🚑 Servidor UCI Ambulancias ejecutándose en puerto ${PORT}`);
-    console.log(`🌍 URL: https://server.onrender.com`);
+    console.log(`🌍 URL: https://uci-ambulancias-backend.onrender.com`); // ✅ URL CORRECTA
     console.log('💡 Listo para recibir fichas clínicas...');
+    
+    // Iniciar sistemas anti-sleep
+    keepInstanceAlive();
+    autoPing();
 });
+// 
 
 
 
